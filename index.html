@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Project Roadmap Whiteboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            user-select: none;
+            overflow: hidden;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: grab;
+            background-size: 32px 32px;
+            background-image: radial-gradient(circle, rgba(255, 255, 255, 0.07) 1.5px, transparent 1.5px);
+        }
+
+        #canvas-container:active { cursor: grabbing; }
+
+        #viewport {
+            transform-origin: 0 0;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .interactive-node { pointer-events: auto; }
+
+        #connections-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: visible;
+        }
+
+        .connection-path {
+            fill: none;
+            stroke-width: 2.5;
+            transition: stroke 0.2s, stroke-width 0.2s;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+        ::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 3px; }
+    </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden">
+
+    <!-- Canvas -->
+    <div id="canvas-container">
+        <div id="viewport">
+            <svg id="connections-layer"></svg>
+            <div id="nodes-container"></div>
+        </div>
+    </div>
+
+    <!-- Header Navigation & Project Controller -->
+    <header class="absolute top-4 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
+        <div class="bg-slate-900/90 backdrop-blur-md border border-slate-700/60 rounded-xl px-4 py-2.5 shadow-2xl flex items-center gap-4 pointer-events-auto">
+            <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-white shadow-lg shadow-cyan-500/20">
+                🧭
+            </div>
+            
+            <!-- Project Switcher Select -->
+            <div>
+                <div class="flex items-center gap-2">
+                    <select id="project-select" onchange="switchProject(this.value)" class="bg-slate-800 text-slate-100 border border-slate-700 rounded-lg text-sm font-bold px-2 py-1 focus:outline-none focus:border-cyan-500">
+                        <option value="">Loading Projects...</option>
+                    </select>
+                    <button onclick="promptNewProject()" class="p-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition" title="Create New Project">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                    </button>
+                    <button onclick="saveCurrentProject()" class="p-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition" title="Save Project to Backend">
+                        <i data-lucide="save" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <p id="project-status" class="text-[11px] text-slate-400 mt-0.5">Connecting to SQLite Backend...</p>
+            </div>
+        </div>
+
+        <!-- Node Add & Controls -->
+        <div class="bg-slate-900/90 backdrop-blur-md border border-slate-700/60 rounded-xl p-1.5 shadow-2xl flex items-center gap-2 pointer-events-auto">
+            <button onclick="addNewPhase()" class="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-medium bg-cyan-600 text-white hover:bg-cyan-500 transition">
+                <i data-lucide="plus-circle" class="w-4 h-4"></i> Add Phase Card
+            </button>
+            <div class="w-px h-5 bg-slate-700 mx-1"></div>
+            <button onclick="filterCategory('all')" id="btn-filter-all" class="filter-btn text-xs px-3 py-1.5 rounded-lg font-medium bg-slate-800 text-slate-200 border border-slate-600">All</button>
+            <button onclick="filterCategory('foundation')" id="btn-filter-foundation" class="filter-btn text-xs px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200">Foundation</button>
+            <button onclick="filterCategory('intelligence')" id="btn-filter-intelligence" class="filter-btn text-xs px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200">Core AI</button>
+            <button onclick="filterCategory('integrations')" id="btn-filter-integrations" class="filter-btn text-xs px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200">Integrations</button>
+            <button onclick="filterCategory('business')" id="btn-filter-business" class="filter-btn text-xs px-3 py-1.5 rounded-lg font-medium text-slate-400 hover:text-slate-200">Business</button>
+        </div>
+    </header>
+
+    <!-- Canvas Floating Toolbar Controls -->
+    <div class="absolute bottom-6 left-6 z-10 flex items-center gap-2 bg-slate-900/90 backdrop-blur-md border border-slate-700/60 p-2 rounded-xl shadow-2xl">
+        <button onclick="zoomIn()" class="p-2 hover:bg-slate-800 rounded-lg text-slate-300 transition" title="Zoom In"><i data-lucide="zoom-in" class="w-5 h-5"></i></button>
+        <button onclick="zoomOut()" class="p-2 hover:bg-slate-800 rounded-lg text-slate-300 transition" title="Zoom Out"><i data-lucide="zoom-out" class="w-5 h-5"></i></button>
+        <button onclick="resetZoom()" class="p-2 hover:bg-slate-800 rounded-lg text-slate-300 transition" title="Reset View"><i data-lucide="maximize" class="w-5 h-5"></i></button>
+        <div class="w-px h-6 bg-slate-700/60 mx-1"></div>
+        <button onclick="layoutNodes('grid')" class="p-2 hover:bg-slate-800 rounded-lg text-slate-300 transition" title="Grid Layout"><i data-lucide="grid" class="w-5 h-5"></i></button>
+        <button onclick="layoutNodes('pipeline')" class="p-2 hover:bg-slate-800 rounded-lg text-slate-300 transition" title="Pipeline Layout"><i data-lucide="git-branch" class="w-5 h-5"></i></button>
+    </div>
+
+    <!-- Details/Edit Drawer -->
+    <div id="drawer" class="fixed right-0 top-0 bottom-0 w-96 bg-slate-900/95 backdrop-blur-xl border-l border-slate-800 p-6 z-20 transform translate-x-full transition-transform duration-300 ease-in-out shadow-2xl flex flex-col justify-between">
+        <div class="overflow-y-auto pr-1 space-y-4">
+            <div class="flex items-start justify-between border-b border-slate-800 pb-3">
+                <span id="drawer-phase-num" class="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">Phase 00</span>
+                <button onclick="closeDrawer()" class="p-1 hover:bg-slate-800 rounded-lg text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <!-- Editable Fields -->
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase">Phase Title</label>
+                    <input id="edit-title" oninput="saveActiveNodeField('title', this.value)" type="text" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-bold text-white mt-1 focus:outline-none focus:border-cyan-500">
+                </div>
+
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase">Track Category</label>
+                    <select id="edit-category" onchange="saveActiveNodeField('category', this.value)" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white mt-1 focus:outline-none focus:border-cyan-500">
+                        <option value="foundation">Foundation</option>
+                        <option value="intelligence">Core AI Intelligence</option>
+                        <option value="integrations">Integrations & Tools</option>
+                        <option value="business">Business & Studio</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase">Phase Goal</label>
+                    <textarea id="edit-goal" oninput="saveActiveNodeField('goal', this.value)" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 mt-1 focus:outline-none focus:border-cyan-500" rows="2"></textarea>
+                </div>
+
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase">Definition of Done</label>
+                    <textarea id="edit-done" oninput="saveActiveNodeField('doneWhen', this.value)" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-amber-300 mt-1 focus:outline-none focus:border-cyan-500" rows="2"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Drawer Bottom Actions -->
+        <div class="pt-4 border-t border-slate-800 flex items-center justify-between">
+            <button onclick="deleteActiveNode()" class="px-3 py-1.5 bg-rose-600/20 text-rose-400 hover:bg-rose-600/30 border border-rose-500/30 text-xs rounded-lg transition font-medium">Delete Node</button>
+            <div class="flex items-center gap-2">
+                <select id="drawer-status-select" onchange="saveActiveNodeField('status', this.value)" class="bg-slate-800 border border-slate-700 rounded-lg text-xs px-2.5 py-1.5 text-slate-200">
+                    <option value="pending">⏳ Pending</option>
+                    <option value="in-progress">⚡ In Progress</option>
+                    <option value="completed">✅ Completed</option>
+                </select>
+                <button onclick="closeDrawer()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg transition font-medium">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000/api';
+        
+        let currentProject = {
+            id: 'mina-roadmap',
+            title: 'Mina Executive Assistant',
+            description: 'Core Roadmap',
+            phases: []
+        };
+
+        let projectsList = [];
+        let activeFilter = 'all';
+        let selectedPhaseId = null;
+        let transform = { x: 40, y: 40, scale: 0.85 };
+        let isDraggingCanvas = false;
+        let isDraggingNode = false;
+        let draggedNodeId = null;
+        let startPan = { x: 0, y: 0 };
+        let nodeDragOffset = { x: 0, y: 0 };
+
+        const categoryColors = {
+            foundation: { border: 'border-cyan-500/50', badge: 'bg-cyan-500/20 text-cyan-300', path: '#06b6d4' },
+            intelligence: { border: 'border-purple-500/50', badge: 'bg-purple-500/20 text-purple-300', path: '#a855f7' },
+            integrations: { border: 'border-emerald-500/50', badge: 'bg-emerald-500/20 text-emerald-300', path: '#10b981' },
+            business: { border: 'border-amber-500/50', badge: 'bg-amber-500/20 text-amber-300', path: '#f59e0b' }
+        };
+
+        const container = document.getElementById('canvas-container');
+        const viewport = document.getElementById('viewport');
+        const nodesContainer = document.getElementById('nodes-container');
+        const connectionsLayer = document.getElementById('connections-layer');
+
+        // Init App
+        async function init() {
+            await fetchProjects();
+            setupEvents();
+            updateTransform();
+            lucide.createIcons();
+        }
+
+        // Fetch project list from backend
+        async function fetchProjects() {
+            try {
+                const res = await fetch(`${API_URL}/projects`);
+                if (res.ok) {
+                    projectsList = await res.json();
+                    if (projectsList.length === 0) {
+                        // Seed default project
+                        await createProject('mina-roadmap', 'Mina Assistant Roadmap', 'Default 27 Phase Roadmap');
+                        return fetchProjects();
+                    }
+                    populateProjectDropdown();
+                    loadProject(projectsList[0].id);
+                    document.getElementById('project-status').innerText = 'Synced with SQLite DB';
+                }
+            } catch (err) {
+                console.warn('Backend unavailable, fallback to memory mode');
+                document.getElementById('project-status').innerText = 'Offline Mode (Local Memory)';
+                currentProject = {
+                    id: 'default',
+                    title: 'Local Roadmap',
+                    phases: [
+                        { id: 0, title: "Foundation", category: "foundation", goal: "Setup basic architecture", build: [], doneWhen: "Boots clean", status: "completed", x: 100, y: 100 },
+                        { id: 1, title: "Gemini AI Core", category: "intelligence", goal: "Integrate LLM API", build: [], doneWhen: "Responds nicely", status: "in-progress", x: 480, y: 100 }
+                    ]
+                };
+                renderNodes();
+                renderConnections();
+            }
+        }
+
+        function populateProjectDropdown() {
+            const select = document.getElementById('project-select');
+            select.innerHTML = projectsList.map(p => `
+                <option value="${p.id}" ${p.id === currentProject.id ? 'selected' : ''}>${p.title}</option>
+            `).join('');
+        }
+
+        async function loadProject(id) {
+            try {
+                const res = await fetch(`${API_URL}/projects/${id}`);
+                if (res.ok) {
+                    currentProject = await res.json();
+                    populateProjectDropdown();
+                    renderNodes();
+                    renderConnections();
+                }
+            } catch (e) {
+                console.error("Failed to load project", e);
+            }
+        }
+
+        async function createProject(id, title, description) {
+            const newProj = {
+                id,
+                title,
+                description: description || '',
+                phases: [
+                    { id: 0, title: "Phase 1: Kickoff", category: "foundation", goal: "Initial setup", build: ["Initialize repository"], doneWhen: "Build passes", status: "in-progress", x: 100, y: 100 },
+                    { id: 1, title: "Phase 2: Core Engine", category: "intelligence", goal: "Build core features", build: ["Core logic"], doneWhen: "Tests pass", status: "pending", x: 480, y: 100 }
+                ]
+            };
+            try {
+                await fetch(`${API_URL}/projects`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newProj)
+                });
+                await fetchProjects();
+                loadProject(id);
+            } catch (err) {
+                alert('Backend not running to create project.');
+            }
+        }
+
+        async function saveCurrentProject() {
+            try {
+                document.getElementById('project-status').innerText = 'Saving...';
+                const res = await fetch(`${API_URL}/projects`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(currentProject)
+                });
+                if (res.ok) {
+                    document.getElementById('project-status').innerText = 'Saved to SQLite DB!';
+                    setTimeout(() => document.getElementById('project-status').innerText = 'Synced with SQLite DB', 2000);
+                }
+            } catch (err) {
+                alert('Could not save to backend!');
+            }
+        }
+
+        function promptNewProject() {
+            const title = prompt('Enter New Project Name:');
+            if (!title) return;
+            const id = title.toLowerCase().replace(/[^a-z0-9]/g, '-');
+            createProject(id, title, 'Custom Project');
+        }
+
+        function switchProject(id) {
+            if (id) loadProject(id);
+        }
+
+        // Render Canvas
+        function renderNodes() {
+            nodesContainer.innerHTML = '';
+            currentProject.phases.forEach((phase) => {
+                const colorScheme = categoryColors[phase.category] || categoryColors.foundation;
+                const isFiltered = activeFilter !== 'all' && phase.category !== activeFilter;
+
+                let statusBadge = phase.status === 'completed' 
+                    ? `<span class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Done</span>`
+                    : phase.status === 'in-progress'
+                    ? `<span class="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30">Active</span>`
+                    : `<span class="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700">Planned</span>`;
+
+                const nodeEl = document.createElement('div');
+                nodeEl.className = `interactive-node absolute w-80 bg-slate-900/90 backdrop-blur-md rounded-xl border ${colorScheme.border} p-4 shadow-xl hover:shadow-2xl transition-shadow cursor-grab ${isFiltered ? 'opacity-30' : 'opacity-100'}`;
+                nodeEl.style.left = `${phase.x}px`;
+                nodeEl.style.top = `${phase.y}px`;
+
+                nodeEl.innerHTML = `
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-mono font-bold ${colorScheme.badge} px-2 py-0.5 rounded-md">PHASE ${phase.id}</span>
+                        ${statusBadge}
+                    </div>
+                    <h3 class="font-bold text-slate-100 text-sm mb-1">${phase.title}</h3>
+                    <p class="text-xs text-slate-400 line-clamp-2 mb-3 leading-relaxed">${phase.goal || 'No goal set'}</p>
+                `;
+
+                // Drag and Select Events
+                nodeEl.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    isDraggingNode = true;
+                    draggedNodeId = phase.id;
+                    nodeDragOffset = {
+                        x: (e.clientX / transform.scale) - phase.x,
+                        y: (e.clientY / transform.scale) - phase.y
+                    };
+                    openDrawer(phase.id);
+                });
+
+                nodesContainer.appendChild(nodeEl);
+            });
+            lucide.createIcons();
+        }
+
+        function renderConnections() {
+            connectionsLayer.innerHTML = '';
+            const sortedPhases = [...currentProject.phases].sort((a,b) => a.id - b.id);
+            for (let i = 0; i < sortedPhases.length - 1; i++) {
+                const source = sortedPhases[i];
+                const target = sortedPhases[i + 1];
+
+                const sx = source.x + 320;
+                const sy = source.y + 60;
+                const tx = target.x;
+                const ty = target.y + 60;
+
+                const dx = Math.abs(tx - sx) * 0.5;
+                const pathData = `M ${sx} ${sy} C ${sx + dx} ${sy}, ${tx - dx} ${ty}, ${tx} ${ty}`;
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', pathData);
+                path.setAttribute('stroke', categoryColors[source.category]?.path || '#475569');
+                path.setAttribute('class', 'connection-path opacity-40');
+                connectionsLayer.appendChild(path);
+            }
+        }
+
+        function addNewPhase() {
+            const nextId = currentProject.phases.length > 0 ? Math.max(...currentProject.phases.map(p => p.id)) + 1 : 0;
+            const lastPhase = currentProject.phases[currentProject.phases.length - 1];
+            const newX = lastPhase ? lastPhase.x + 380 : 100;
+            const newY = lastPhase ? lastPhase.y : 100;
+
+            currentProject.phases.push({
+                id: nextId,
+                title: `New Phase ${nextId}`,
+                category: 'foundation',
+                goal: 'Define phase objectives',
+                doneWhen: 'Completion criteria met',
+                status: 'pending',
+                x: newX,
+                y: newY
+            });
+
+            renderNodes();
+            renderConnections();
+            openDrawer(nextId);
+        }
+
+        function saveActiveNodeField(field, value) {
+            if (selectedPhaseId === null) return;
+            const phase = currentProject.phases.find(p => p.id === selectedPhaseId);
+            if (phase) {
+                phase[field] = value;
+                renderNodes();
+                renderConnections();
+            }
+        }
+
+        function deleteActiveNode() {
+            if (selectedPhaseId === null) return;
+            currentProject.phases = currentProject.phases.filter(p => p.id !== selectedPhaseId);
+            closeDrawer();
+            renderNodes();
+            renderConnections();
+        }
+
+        // Mouse Dragging and Panning System
+        function setupEvents() {
+            container.addEventListener('mousedown', (e) => {
+                if (e.target === container || e.target.id === 'viewport' || e.target.tagName === 'svg') {
+                    isDraggingCanvas = true;
+                    startPan = { x: e.clientX - transform.x, y: e.clientY - transform.y };
+                }
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (isDraggingCanvas) {
+                    transform.x = e.clientX - startPan.x;
+                    transform.y = e.clientY - startPan.y;
+                    updateTransform();
+                } else if (isDraggingNode && draggedNodeId !== null) {
+                    const phase = currentProject.phases.find(p => p.id === draggedNodeId);
+                    if (phase) {
+                        phase.x = (e.clientX / transform.scale) - nodeDragOffset.x;
+                        phase.y = (e.clientY / transform.scale) - nodeDragOffset.y;
+                        renderNodes();
+                        renderConnections();
+                    }
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                isDraggingCanvas = false;
+                isDraggingNode = false;
+                draggedNodeId = null;
+            });
+
+            container.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const zoomFactor = 1.08;
+                let newScale = e.deltaY < 0 ? transform.scale * zoomFactor : transform.scale / zoomFactor;
+                transform.scale = Math.min(Math.max(0.3, newScale), 1.8);
+                updateTransform();
+            }, { passive: false });
+        }
+
+        function updateTransform() {
+            viewport.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`;
+        }
+
+        function openDrawer(phaseId) {
+            selectedPhaseId = phaseId;
+            const phase = currentProject.phases.find(p => p.id === phaseId);
+            if (!phase) return;
+
+            document.getElementById('drawer-phase-num').innerText = `PHASE ${phase.id}`;
+            document.getElementById('edit-title').value = phase.title || '';
+            document.getElementById('edit-category').value = phase.category || 'foundation';
+            document.getElementById('edit-goal').value = phase.goal || '';
+            document.getElementById('edit-done').value = phase.doneWhen || '';
+            document.getElementById('drawer-status-select').value = phase.status || 'pending';
+
+            document.getElementById('drawer').classList.remove('translate-x-full');
+        }
+
+        function closeDrawer() {
+            document.getElementById('drawer').classList.add('translate-x-full');
+            selectedPhaseId = null;
+        }
+
+        function filterCategory(cat) {
+            activeFilter = cat;
+            renderNodes();
+        }
+
+        function zoomIn() { transform.scale = Math.min(transform.scale * 1.2, 1.8); updateTransform(); }
+        function zoomOut() { transform.scale = Math.max(transform.scale / 1.2, 0.3); updateTransform(); }
+        function resetZoom() { transform = { x: 40, y: 40, scale: 0.85 }; updateTransform(); }
+
+        function layoutNodes(type) {
+            if (type === 'pipeline') {
+                currentProject.phases.forEach((p, idx) => { p.x = 100 + idx * 360; p.y = 300; });
+            } else if (type === 'grid') {
+                const cols = 5;
+                currentProject.phases.forEach((p, idx) => {
+                    p.x = 100 + (idx % cols) * 380;
+                    p.y = 100 + Math.floor(idx / cols) * 220;
+                });
+            }
+            renderNodes();
+            renderConnections();
+        }
+
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
